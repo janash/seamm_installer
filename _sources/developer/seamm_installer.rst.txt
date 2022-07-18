@@ -1,0 +1,165 @@
+seamm\_installer package
+========================
+
+Submodules
+----------
+
+seamm\_installer.apps module
+----------------------------
+
+.. automodule:: seamm_installer.apps
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.cache module
+-----------------------------
+
+.. automodule:: seamm_installer.cache
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.cli module
+---------------------------
+
+.. automodule:: seamm_installer.cli
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.conda module
+-----------------------------
+
+.. automodule:: seamm_installer.conda
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.configuration module
+-------------------------------------
+
+.. automodule:: seamm_installer.configuration
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.datastore module
+---------------------------------
+
+.. automodule:: seamm_installer.datastore
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.gui module
+---------------------------
+
+.. automodule:: seamm_installer.gui
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.install module
+-------------------------------
+
+.. automodule:: seamm_installer.install
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.installer\_base module
+---------------------------------------
+
+.. automodule:: seamm_installer.installer_base
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.linux module
+-----------------------------
+
+.. automodule:: seamm_installer.linux
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.mac module
+---------------------------
+
+.. automodule:: seamm_installer.mac
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.metadata module
+--------------------------------
+
+.. automodule:: seamm_installer.metadata
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.my module
+--------------------------
+
+.. automodule:: seamm_installer.my
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.pip module
+---------------------------
+
+.. automodule:: seamm_installer.pip
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.services module
+--------------------------------
+
+.. automodule:: seamm_installer.services
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.show module
+----------------------------
+
+.. automodule:: seamm_installer.show
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.uninstall module
+---------------------------------
+
+.. automodule:: seamm_installer.uninstall
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.update module
+------------------------------
+
+.. automodule:: seamm_installer.update
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+seamm\_installer.util module
+----------------------------
+
+.. automodule:: seamm_installer.util
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Module contents
+---------------
+
+.. automodule:: seamm_installer
+   :members:
+   :undoc-members:
+   :show-inheritance:

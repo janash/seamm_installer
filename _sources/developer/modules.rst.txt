@@ -1,0 +1,7 @@
+seamm_installer
+===============
+
+.. toctree::
+   :maxdepth: 4
+
+   seamm_installer

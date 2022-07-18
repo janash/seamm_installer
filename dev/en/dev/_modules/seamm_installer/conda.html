@@ -1,0 +1,728 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>seamm_installer.conda &#8212; SEAMM Installer Step 2022.6.30+1.g8f9f278 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/classic.css" />
+    
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+    <script src="../../_static/jquery.js"></script>
+    <script src="../../_static/underscore.js"></script>
+    <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+    <script src="../../_static/doctools.js"></script>
+    
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">SEAMM Installer Step 2022.6.30+1.g8f9f278 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">seamm_installer.conda</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for seamm_installer.conda</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span> <span class="nn">pkg_resources</span>
+<span class="kn">import</span> <span class="nn">shlex</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="Conda"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda">[docs]</a><span class="k">class</span> <span class="nc">Conda</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class for handling conda</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">logger</span><span class="o">=</span><span class="n">logger</span><span class="p">):</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Creating Conda </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">))</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_is_installed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">logger</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">channels</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;local&quot;</span><span class="p">,</span> <span class="s2">&quot;conda-forge&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root_path</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initialize</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Print the conda information in a nice format.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_installed</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;Conda does not appear to be installed!&quot;</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">active_environment</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The currently active Conda environment.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_installed</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;CONDA_DEFAULT_ENV&quot;</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">environments</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The available conda environments.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Getting list of environment&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   root path = </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">root_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_installed</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">env</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">[</span><span class="s2">&quot;envs&quot;</span><span class="p">]:</span>
+                <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   environment </span><span class="si">{</span><span class="n">env</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">path</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_path</span><span class="p">:</span>
+                    <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;base&quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;    --&gt; base&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;miniconda&quot;</span><span class="p">:</span>
+                        <span class="c1"># Windows is different.</span>
+                        <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;base&quot;</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;    --&gt; base&quot;</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    --&gt; </span><span class="si">{</span><span class="n">path</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">result</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">is_installed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Whether we have access to conda.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_installed</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">prefix</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The path for the conda root.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_installed</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">[</span><span class="s2">&quot;conda_prefix&quot;</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">root_prefix</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The root prefix of the conda installation.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_installed</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">[</span><span class="s2">&quot;root_prefix&quot;</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="Conda.activate"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.activate">[docs]</a>    <span class="k">def</span> <span class="nf">activate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">environment</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Activate the requested environment.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_installed</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Conda is not installed.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">environment</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Conda environment &#39;</span><span class="si">{</span><span class="n">environment</span><span class="si">}</span><span class="s2">&#39; does not exist.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Set the various environment variables that &#39;conda activate&#39; does</span>
+        <span class="k">if</span> <span class="s2">&quot;CONDA_SHLVL&quot;</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">:</span>
+            <span class="n">level</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;CONDA_SHLVL&quot;</span><span class="p">])</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;CONDA_PREFIX_</span><span class="si">{</span><span class="n">level</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;CONDA_PREFIX&quot;</span><span class="p">]</span>
+            <span class="n">level</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;CONDA_SHLVL&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">level</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;CONDA_PROMPT_MODIFIER&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">environment</span><span class="si">}</span><span class="s2">)&quot;</span>
+
+        <span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;PATH&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">pathsep</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">level</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">path</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">(</span><span class="n">environment</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;bin&quot;</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="n">level</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">path</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">(</span><span class="n">environment</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;bin&quot;</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;PATH&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">pathsep</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+
+        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;CONDA_PREFIX&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">(</span><span class="n">environment</span><span class="p">))</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;CONDA_DEFAULT_ENV&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">environment</span></div>
+
+    <span class="k">def</span> <span class="nf">_initialize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Get the information about the current Conda installation.&quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;conda info --json&quot;</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">shlex</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+                <span class="n">args</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calling conda, returncode = </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output:</span><span class="se">\n\n</span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_is_installed</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">return</span>
+
+        <span class="c1"># Fixing error on condaforge</span>
+        <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_is_installed</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">return</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_is_installed</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">conda info --json</span><span class="se">\n\n</span><span class="si">{</span><span class="n">result</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_is_installed</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">return</span>
+
+        <span class="c1"># Find the root path for the environment</span>
+        <span class="c1"># Typically the base environment is e.g. ~/opt/miniconda3 and all other</span>
+        <span class="c1"># environments are in ~/opt/miniconda3/envs/ (~/opt/anaconda3).</span>
+        <span class="c1"># We want the path for the base environment.</span>
+        <span class="c1">#</span>
+        <span class="c1"># In some installations there are more than one base environment! So</span>
+        <span class="c1"># pick the one that looks like &#39;anacondaX&#39; or &#39;minicondaX&#39;.</span>
+        <span class="c1"># As a last resort, just pick one.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Finding the conda root path&quot;</span><span class="p">)</span>
+        <span class="n">roots</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">env</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">[</span><span class="s2">&quot;envs&quot;</span><span class="p">]:</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    environment path </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;envs&quot;</span><span class="p">:</span>
+                <span class="n">roots</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">parent</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">roots</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">root</span> <span class="ow">in</span> <span class="n">roots</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">name</span>
+            <span class="k">if</span> <span class="s2">&quot;miniconda&quot;</span> <span class="ow">in</span> <span class="n">name</span> <span class="ow">or</span> <span class="s2">&quot;anaconda&quot;</span> <span class="ow">in</span> <span class="n">name</span><span class="p">:</span>
+                <span class="k">break</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">root_path</span> <span class="o">=</span> <span class="n">root</span>
+
+        <span class="n">tmp</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n\t</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">environments</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;environments:</span><span class="se">\n\t</span><span class="si">{</span><span class="n">tmp</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Conda.create_environment"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.create_environment">[docs]</a>    <span class="k">def</span> <span class="nf">create_environment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">environment_file</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Create a Conda environment.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        environment_file : str or pathlib.Path</span>
+<span class="sd">            The name or path to the environment file.</span>
+<span class="sd">        name : str = None</span>
+<span class="sd">            The name of the environment. Defaults to that given in the</span>
+<span class="sd">            environment file.</span>
+<span class="sd">        force : bool = False</span>
+<span class="sd">            Whether to overwrite an existing environment.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">environment_file</span><span class="p">,</span> <span class="n">Path</span><span class="p">):</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">environment_file</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">environment_file</span>
+
+        <span class="n">command</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;conda env create --file &#39;</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+        <span class="k">if</span> <span class="n">force</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="s2">&quot; --force&quot;</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Using the name leads to odd paths, so be explicit.</span>
+            <span class="c1"># command += f&quot; --name &#39;{name}&#39;&quot;</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_path</span> <span class="o">/</span> <span class="s2">&quot;envs&quot;</span> <span class="o">/</span> <span class="n">name</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; --prefix &#39;</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;command = </span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_execute</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calling conda, returncode = </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output:</span><span class="se">\n\n</span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_initialize</span><span class="p">()</span>
+            <span class="k">raise</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initialize</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="Conda.delete_environment"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.delete_environment">[docs]</a>    <span class="k">def</span> <span class="nf">delete_environment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Delete a Conda environment.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        name : str</span>
+<span class="sd">            The name of the environment.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Using the name leads to odd paths, so be explicit.</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_path</span> <span class="o">/</span> <span class="s2">&quot;envs&quot;</span> <span class="o">/</span> <span class="n">name</span>
+
+        <span class="n">command</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;conda env remove --yes  --prefix &#39;</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;command = </span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_execute</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calling conda, returncode = </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output:</span><span class="se">\n\n</span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_initialize</span><span class="p">()</span>
+            <span class="k">raise</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initialize</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="Conda.exists"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.exists">[docs]</a>    <span class="k">def</span> <span class="nf">exists</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">environment</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Whether an environment exists.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        environment : str</span>
+<span class="sd">           The name of the environment.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True if the environment exists, False otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">environment</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">environments</span></div>
+
+<div class="viewcode-block" id="Conda.install"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.install">[docs]</a>    <span class="k">def</span> <span class="nf">install</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">package</span><span class="p">,</span>
+        <span class="n">environment</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">channels</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">override_channels</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">progress</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">newline</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">update</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Install a package in an environment..</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        package: strip</span>
+<span class="sd">            The package to install.</span>
+<span class="sd">        environment : str</span>
+<span class="sd">            The name of the environment to list, defaults to the current.</span>
+<span class="sd">        channels: [str] = None</span>
+<span class="sd">            A list of channels to search. defaults to the list in self.channels.</span>
+<span class="sd">        override_channels: bool = True</span>
+<span class="sd">            Ignore channels configured in .condarc and the default channel.</span>
+<span class="sd">        progress : bool = True</span>
+<span class="sd">            Whether to show progress dots.</span>
+<span class="sd">        newline : bool = True</span>
+<span class="sd">            Whether to print a newline at the end if showing progress</span>
+<span class="sd">        update : None or method</span>
+<span class="sd">            Method to call to e.g. update a progress bar</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;conda install --yes &quot;</span>
+        <span class="k">if</span> <span class="n">environment</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Using the name leads to odd paths, so be explicit.</span>
+            <span class="c1"># command += f&quot; --name &#39;{environment}&#39;&quot;</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_path</span> <span class="o">/</span> <span class="s2">&quot;envs&quot;</span> <span class="o">/</span> <span class="n">environment</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; --prefix &#39;</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+        <span class="k">if</span> <span class="n">override_channels</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="s2">&quot; --override-channels&quot;</span>
+        <span class="k">if</span> <span class="n">channels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">channel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">channels</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; -c </span><span class="si">{</span><span class="n">channel</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">channel</span> <span class="ow">in</span> <span class="n">channels</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; -c </span><span class="si">{</span><span class="n">channel</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_execute</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="n">progress</span><span class="o">=</span><span class="n">progress</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="n">newline</span><span class="p">,</span> <span class="n">update</span><span class="o">=</span><span class="n">update</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Conda.list"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.list">[docs]</a>    <span class="k">def</span> <span class="nf">list</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">environment</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fullname</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">update</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The contents of an environment.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        environment : str</span>
+<span class="sd">            The name of the environment to list, defaults to the current.</span>
+<span class="sd">        query: str</span>
+<span class="sd">            Regexp for package names, default to all packages</span>
+<span class="sd">        update : None or method</span>
+<span class="sd">            Method to call to e.g. update a progress bar</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict</span>
+<span class="sd">            A dictionary keyed by the package names.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;conda list --json&quot;</span>
+        <span class="k">if</span> <span class="n">environment</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; --name &#39;</span><span class="si">{</span><span class="n">environment</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+        <span class="k">if</span> <span class="n">fullname</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="s2">&quot; --full-name&quot;</span>
+        <span class="k">if</span> <span class="n">query</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; &#39;</span><span class="si">{</span><span class="n">query</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;command = </span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">result</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execute</span><span class="p">(</span>
+                <span class="n">command</span><span class="p">,</span> <span class="n">progress</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">update</span><span class="o">=</span><span class="n">update</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calling conda, returncode = </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output:</span><span class="se">\n\n</span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s2">&quot;ignore&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">stdout</span><span class="p">):</span>
+                <span class="k">if</span> <span class="s2">&quot;version&quot;</span> <span class="ow">in</span> <span class="n">x</span><span class="p">:</span>
+                    <span class="n">x</span><span class="p">[</span><span class="s2">&quot;version&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pkg_resources</span><span class="o">.</span><span class="n">parse_version</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="s2">&quot;version&quot;</span><span class="p">])</span>
+                    <span class="n">result</span><span class="p">[</span><span class="n">x</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">x</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+<div class="viewcode-block" id="Conda.path"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.path">[docs]</a>    <span class="k">def</span> <span class="nf">path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">environment</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The path for an environment.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        environment : str</span>
+<span class="sd">            The name of the environment to remove.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        pathlib.Path</span>
+<span class="sd">            The path to the environment.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">environment</span> <span class="o">==</span> <span class="s2">&quot;base&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">root_path</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">env</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">[</span><span class="s2">&quot;envs&quot;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">env</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_path</span><span class="p">:</span>
+                    <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">environment</span> <span class="o">==</span> <span class="n">path</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">path</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Environment &#39;</span><span class="si">{</span><span class="n">environment</span><span class="si">}</span><span class="s2">&#39; not found.&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Conda.remove_environment"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.remove_environment">[docs]</a>    <span class="k">def</span> <span class="nf">remove_environment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">environment</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Remove an existing environment.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        environment : str</span>
+<span class="sd">            The name of the environment to remove.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;conda env remove --name &#39;</span><span class="si">{</span><span class="n">environment</span><span class="si">}</span><span class="s2">&#39; --yes --json&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_execute</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calling conda, returncode = </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output:</span><span class="se">\n\n</span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_initialize</span><span class="p">()</span>
+            <span class="k">raise</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initialize</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="Conda.search"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.search">[docs]</a>    <span class="k">def</span> <span class="nf">search</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">query</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">channels</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">override_channels</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">progress</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">newline</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">update</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Run conda search, returning a dictionary of packages.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        query: str = None</span>
+<span class="sd">            The pattern to search, Defaults to None, meaning all packages.</span>
+<span class="sd">        channels: [str] = None</span>
+<span class="sd">            A list of channels to search. defaults to the list in self.channels.</span>
+<span class="sd">        override_channels: bool = True</span>
+<span class="sd">            Ignore channels configured in .condarc and the default channel.</span>
+<span class="sd">        progress : bool = True</span>
+<span class="sd">            Whether to show progress dots.</span>
+<span class="sd">        newline : bool = True</span>
+<span class="sd">            Whether to print a newline at the end if showing progress</span>
+<span class="sd">        update : None or method</span>
+<span class="sd">            Method to call to e.g. update a progress bar</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict</span>
+<span class="sd">            A dictionary of packages, with versions for each.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;conda search --json&quot;</span>
+        <span class="k">if</span> <span class="n">override_channels</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="s2">&quot; --override-channels&quot;</span>
+        <span class="k">if</span> <span class="n">channels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">channel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">channels</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; -c </span><span class="si">{</span><span class="n">channel</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">channel</span> <span class="ow">in</span> <span class="n">channels</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; -c </span><span class="si">{</span><span class="n">channel</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">if</span> <span class="n">query</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">query</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="n">_</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execute</span><span class="p">(</span>
+            <span class="n">command</span><span class="p">,</span> <span class="n">progress</span><span class="o">=</span><span class="n">progress</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="n">newline</span><span class="p">,</span> <span class="n">update</span><span class="o">=</span><span class="n">update</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;expected output from </span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="s2">, got </span><span class="si">{</span><span class="n">stdout</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="n">e</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="s2">&quot;error&quot;</span> <span class="ow">in</span> <span class="n">output</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">package</span><span class="p">,</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">output</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">result</span><span class="p">[</span><span class="n">package</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;channel&quot;</span><span class="p">:</span> <span class="n">data</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s2">&quot;channel&quot;</span><span class="p">],</span>
+                <span class="s2">&quot;version&quot;</span><span class="p">:</span> <span class="n">pkg_resources</span><span class="o">.</span><span class="n">parse_version</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s2">&quot;version&quot;</span><span class="p">]),</span>
+                <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;not available&quot;</span><span class="p">,</span>
+            <span class="p">}</span>
+
+        <span class="k">return</span> <span class="n">result</span></div>
+
+<div class="viewcode-block" id="Conda.update"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.update">[docs]</a>    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">package</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">environment</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">channels</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">override_channels</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">progress</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">newline</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="nb">all</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">update</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Update a package in an environment..</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        package: strip</span>
+<span class="sd">            The package to update.</span>
+<span class="sd">        environment : str</span>
+<span class="sd">            The name of the environment to list, defaults to the current.</span>
+<span class="sd">        channels: [str] = None</span>
+<span class="sd">            A list of channels to search. defaults to the list in self.channels.</span>
+<span class="sd">        override_channels: bool = True</span>
+<span class="sd">            Ignore channels configured in .condarc and the default channel.</span>
+<span class="sd">        progress : bool = True</span>
+<span class="sd">            Whether to show progress dots.</span>
+<span class="sd">        newline : bool = True</span>
+<span class="sd">            Whether to print a newline at the end if showing progress</span>
+<span class="sd">        all : bool = False</span>
+<span class="sd">            Fully update the environment.</span>
+<span class="sd">        update : None or method</span>
+<span class="sd">            Method to call to e.g. update a progress bar</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;conda update --yes &quot;</span>
+        <span class="k">if</span> <span class="n">environment</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Using the name leads to odd paths, so be explicit.</span>
+            <span class="c1"># command += f&quot; --name &#39;{environment}&#39;&quot;</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_path</span> <span class="o">/</span> <span class="s2">&quot;envs&quot;</span> <span class="o">/</span> <span class="n">environment</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; --prefix &#39;</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+        <span class="k">if</span> <span class="n">override_channels</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="s2">&quot; --override-channels&quot;</span>
+        <span class="k">if</span> <span class="n">channels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">channel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">channels</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; -c </span><span class="si">{</span><span class="n">channel</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">channel</span> <span class="ow">in</span> <span class="n">channels</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; -c </span><span class="si">{</span><span class="n">channel</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="k">if</span> <span class="nb">all</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="s2">&quot; --all&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">package</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Conda update requires either &#39;--all&#39; of a package&quot;</span><span class="p">)</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_execute</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="n">progress</span><span class="o">=</span><span class="n">progress</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="n">newline</span><span class="p">,</span> <span class="n">update</span><span class="o">=</span><span class="n">update</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Conda.uninstall"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.uninstall">[docs]</a>    <span class="k">def</span> <span class="nf">uninstall</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">package</span><span class="p">,</span>
+        <span class="n">environment</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">channels</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">override_channels</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">progress</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">newline</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">update</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Uninstall a package from an environment..</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        package: str</span>
+<span class="sd">            The package to uninstall install.</span>
+<span class="sd">        environment : str</span>
+<span class="sd">            The name of the environment to list, defaults to the current.</span>
+<span class="sd">        channels: [str] = None</span>
+<span class="sd">            A list of channels to search. defaults to the list in self.channels.</span>
+<span class="sd">        override_channels: bool = True</span>
+<span class="sd">            Ignore channels configured in .condarc and the default channel.</span>
+<span class="sd">        progress : bool = True</span>
+<span class="sd">            Whether to show progress dots.</span>
+<span class="sd">        newline : bool = True</span>
+<span class="sd">            Whether to print a newline at the end if showing progress</span>
+<span class="sd">        update : None or method</span>
+<span class="sd">            Method to call to e.g. update a progress bar</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;conda uninstall --yes &quot;</span>
+        <span class="k">if</span> <span class="n">environment</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; --name &#39;</span><span class="si">{</span><span class="n">environment</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+        <span class="k">if</span> <span class="n">override_channels</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="s2">&quot; --override-channels&quot;</span>
+        <span class="k">if</span> <span class="n">channels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">channel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">channels</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; -c </span><span class="si">{</span><span class="n">channel</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">channel</span> <span class="ow">in</span> <span class="n">channels</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; -c </span><span class="si">{</span><span class="n">channel</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_execute</span><span class="p">(</span><span class="n">command</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Conda.update_environment"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.conda.Conda.update_environment">[docs]</a>    <span class="k">def</span> <span class="nf">update_environment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">environment_file</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Update a Conda environment.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        environment_file : str or pathlib.Path</span>
+<span class="sd">            The name or path to the environment file.</span>
+<span class="sd">        name : str = None</span>
+<span class="sd">            The name of the environment. Defaults to the current environment.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">environment_file</span><span class="p">,</span> <span class="n">Path</span><span class="p">):</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">environment_file</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">environment_file</span>
+
+        <span class="n">command</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;conda env update --file &#39;</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Using the name leads to odd paths, so be explicit.</span>
+            <span class="c1"># command += f&quot; --name &#39;{name}&#39;&quot;</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_path</span> <span class="o">/</span> <span class="s2">&quot;envs&quot;</span> <span class="o">/</span> <span class="n">name</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; --prefix &#39;</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;command = </span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_execute</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calling conda, returncode = </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output:</span><span class="se">\n\n</span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span></div>
+
+    <span class="k">def</span> <span class="nf">_execute</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">poll_interval</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">progress</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">update</span><span class="o">=</span><span class="kc">None</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Execute the command as a subprocess.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        command : str</span>
+<span class="sd">            The command, with any arguments, to execute.</span>
+<span class="sd">        poll_interval : int</span>
+<span class="sd">            Time interval in seconds for checking for output.</span>
+<span class="sd">        progress : bool = True</span>
+<span class="sd">            Whether to show progress dots.</span>
+<span class="sd">        newline : bool = True</span>
+<span class="sd">            Whether to print a newline at the end if showing progress</span>
+<span class="sd">        update : None or method</span>
+<span class="sd">            Method to call to e.g. update a progress bar</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;running &#39;</span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">shlex</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="n">process</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span>
+            <span class="n">args</span><span class="p">,</span>
+            <span class="n">bufsize</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
+            <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
+            <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">stdout</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">stderr</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;    checking if finished&quot;</span><span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    finished! result = </span><span class="si">{</span><span class="n">result</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">break</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;    calling communicate&quot;</span><span class="p">)</span>
+                <span class="n">output</span><span class="p">,</span> <span class="n">errors</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">communicate</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="n">poll_interval</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">TimeoutExpired</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;    timed out&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">progress</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">update</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+                        <span class="n">n</span> <span class="o">+=</span> <span class="mi">1</span>
+                        <span class="k">if</span> <span class="n">n</span> <span class="o">&gt;=</span> <span class="mi">50</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+                            <span class="n">n</span> <span class="o">=</span> <span class="mi">0</span>
+                        <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">update</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">output</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+                    <span class="n">stdout</span> <span class="o">+=</span> <span class="n">output</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">errors</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+                    <span class="n">stderr</span> <span class="o">+=</span> <span class="n">errors</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;stderr: &#39;</span><span class="si">{</span><span class="n">errors</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">progress</span> <span class="ow">and</span> <span class="n">newline</span> <span class="ow">and</span> <span class="n">n</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">update</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span></div>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">SEAMM Installer Step 2022.6.30+1.g8f9f278 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">seamm_installer.conda</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2022, Paul Saxe.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 5.0.2.
+    </div>
+  </body>
+</html>

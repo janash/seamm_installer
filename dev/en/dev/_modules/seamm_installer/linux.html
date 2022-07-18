@@ -1,0 +1,547 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>seamm_installer.linux &#8212; SEAMM Installer Step 2022.6.30+1.g8f9f278 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/classic.css" />
+    
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+    <script src="../../_static/jquery.js"></script>
+    <script src="../../_static/underscore.js"></script>
+    <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+    <script src="../../_static/doctools.js"></script>
+    
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">SEAMM Installer Step 2022.6.30+1.g8f9f278 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">seamm_installer.linux</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for seamm_installer.linux</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Linux OS specific routines handling unique operations.</span>
+
+<span class="sd">* Installing daemons to handle the Dashboard and JobServer</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span> <span class="nn">configparser</span> <span class="kn">import</span> <span class="n">ConfigParser</span>
+<span class="kn">import</span> <span class="nn">getpass</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span> <span class="nn">shutil</span>
+<span class="kn">from</span> <span class="nn">string</span> <span class="kn">import</span> <span class="n">Template</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="n">app_text</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">[Desktop Entry]</span>
+<span class="s2"># The version of the desktop entry specification to which this file complies</span>
+<span class="s2">Version=1.5</span>
+
+<span class="s2">Type=Application</span>
+<span class="s2">Name=$</span><span class="si">{name}</span><span class="s2"></span>
+<span class="s2">Comment=$</span><span class="si">{comment}</span><span class="s2"></span>
+<span class="s2">Exec=$</span><span class="si">{exe}</span><span class="s2"></span>
+<span class="s2">Icon=$</span><span class="si">{icon}</span><span class="s2"></span>
+<span class="s2">Terminal=false</span>
+<span class="s2">SingleMainWindow=true</span>
+<span class="s2">Categories=Education;Science;Chemistry;Physics</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+<span class="n">user_text</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">[Unit]</span>
+<span class="s2">Description=$</span><span class="si">{description}</span><span class="s2"></span>
+<span class="s2">[Service]</span>
+<span class="s2">WorkingDirectory=$</span><span class="si">{wd}</span><span class="s2"></span>
+<span class="s2">ExecStart=$</span><span class="si">{exe}</span><span class="s2"></span>
+<span class="s2">Type=simple</span>
+<span class="s2">TimeoutStopSec=10</span>
+<span class="s2">Restart=on-failure</span>
+<span class="s2">RestartSec=5</span>
+<span class="s2">[Install]</span>
+<span class="s2">WantedBy=default.target</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+<span class="n">service_text</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">[Unit]</span>
+<span class="s2">Description=$</span><span class="si">{description}</span><span class="s2"></span>
+<span class="s2">[Service]</span>
+<span class="s2">User=$</span><span class="si">{username}</span><span class="s2"></span>
+<span class="s2">WorkingDirectory=$</span><span class="si">{wd}</span><span class="s2"></span>
+<span class="s2">ExecStart=$</span><span class="si">{exe}</span><span class="s2"></span>
+<span class="s2">Type=simple</span>
+<span class="s2">TimeoutStopSec=10</span>
+<span class="s2">Restart=on-failure</span>
+<span class="s2">RestartSec=5</span>
+<span class="s2">[Install]</span>
+<span class="s2">WantedBy=multi-user.target</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+
+<div class="viewcode-block" id="list_to_dict"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.list_to_dict">[docs]</a><span class="k">def</span> <span class="nf">list_to_dict</span><span class="p">(</span><span class="n">lst</span><span class="p">):</span>
+    <span class="n">res_dct</span> <span class="o">=</span> <span class="p">{</span><span class="n">lst</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span> <span class="n">lst</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">lst</span><span class="p">),</span> <span class="mi">2</span><span class="p">)}</span>
+    <span class="k">return</span> <span class="n">res_dct</span></div>
+
+
+<div class="viewcode-block" id="create_app"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.create_app">[docs]</a><span class="k">def</span> <span class="nf">create_app</span><span class="p">(</span>
+    <span class="n">exe_path</span><span class="p">,</span>
+    <span class="o">*</span><span class="n">args</span><span class="p">,</span>
+    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;SEAMM&quot;</span><span class="p">,</span>
+    <span class="n">comment</span><span class="o">=</span><span class="s2">&quot;the Simulation Environment for Atomistic and Molecular Modeling&quot;</span><span class="p">,</span>
+    <span class="n">user_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">icons</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Create an application bundle for a Linux app.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    exe_path : pathlib.Path or str</span>
+<span class="sd">        The path to the executable (required). Either a path-like object or string</span>
+<span class="sd">    name : str</span>
+<span class="sd">        The name of the app</span>
+<span class="sd">    comment : str = &quot;the Simulation Environment for Atomistic and Molecular Modeling&quot;</span>
+<span class="sd">        A comment for use in tooltips, etc.</span>
+<span class="sd">    user_only : bool = False</span>
+<span class="sd">        Whether to install for just the current user or all users (default).</span>
+<span class="sd">    icons : pathlib.Path or str</span>
+<span class="sd">        Optional path to the icns files to use.</span>
+<span class="sd">    kwargs :</span>
+<span class="sd">        Other keywords arguments for compatibility with other OS&#39;s. Ignored</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">user_only</span><span class="p">:</span>
+        <span class="n">applications_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;~/.local/share/applications/&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span>
+        <span class="n">applications_path</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="mo">0o755</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">applications_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/usr/local/share/applications/&quot;</span><span class="p">)</span>
+
+    <span class="c1"># And put the icons in place</span>
+    <span class="n">icons_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;~/.local/share/icons/hicolor/&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">icons</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">icon</span> <span class="ow">in</span> <span class="n">path</span><span class="o">.</span><span class="n">iterdir</span><span class="p">():</span>
+        <span class="n">dimensions</span> <span class="o">=</span> <span class="n">icon</span><span class="o">.</span><span class="n">stem</span>
+        <span class="k">if</span> <span class="s2">&quot;x&quot;</span> <span class="ow">in</span> <span class="n">dimensions</span><span class="p">:</span>
+            <span class="n">directory</span> <span class="o">=</span> <span class="n">icons_path</span> <span class="o">/</span> <span class="n">dimensions</span> <span class="o">/</span> <span class="s2">&quot;apps&quot;</span>
+            <span class="n">directory</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="mo">0o755</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">shutil</span><span class="o">.</span><span class="n">copyfile</span><span class="p">(</span><span class="n">icon</span><span class="p">,</span> <span class="n">directory</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.png&quot;</span><span class="p">)</span>
+
+    <span class="c1"># And the desktop file itself.</span>
+    <span class="n">desktop</span> <span class="o">=</span> <span class="n">Template</span><span class="p">(</span><span class="n">app_text</span><span class="p">)</span><span class="o">.</span><span class="n">substitute</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+        <span class="n">comment</span><span class="o">=</span><span class="n">comment</span><span class="p">,</span>
+        <span class="n">exe</span><span class="o">=</span><span class="n">exe_path</span><span class="p">,</span>
+        <span class="n">icon</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">desktop_path</span> <span class="o">=</span> <span class="n">applications_path</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.desktop&quot;</span>
+    <span class="n">desktop_path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">desktop</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="delete_app"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.delete_app">[docs]</a><span class="k">def</span> <span class="nf">delete_app</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">missing_ok</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Delete the app given.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str</span>
+<span class="sd">        The name of the app.</span>
+<span class="sd">    missing_ok : bool = False</span>
+<span class="sd">        Don&#39;t throw an error if the app does not exist.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">apps</span> <span class="o">=</span> <span class="n">get_apps</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">apps</span><span class="p">:</span>
+        <span class="n">apps</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">missing_ok</span><span class="o">=</span><span class="n">missing_ok</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">missing_ok</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;App &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; does not exist.&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="get_apps"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.get_apps">[docs]</a><span class="k">def</span> <span class="nf">get_apps</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Return a list of all user applications.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    {str: str}</span>
+<span class="sd">        Dictionary of app names and paths to the desktop file.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;~/.local/share/applications/&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(),</span>
+        <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/usr/local/share/applications/&quot;</span><span class="p">),</span>
+    <span class="p">)</span>
+    <span class="n">apps</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">file_path</span> <span class="ow">in</span> <span class="n">path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">&quot;*.desktop&quot;</span><span class="p">):</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">file_path</span><span class="o">.</span><span class="n">stem</span>
+            <span class="n">apps</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">file_path</span>
+    <span class="k">return</span> <span class="n">apps</span></div>
+
+
+<div class="viewcode-block" id="update_app"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.update_app">[docs]</a><span class="k">def</span> <span class="nf">update_app</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">version</span><span class="p">,</span> <span class="n">missing_ok</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Update the version for a Linux app.</span>
+
+<span class="sd">    Since the desktop file does not have the version,</span>
+<span class="sd">    nothing to do.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str</span>
+<span class="sd">        The name of the app</span>
+<span class="sd">    version : str</span>
+<span class="sd">        The version of the app.</span>
+<span class="sd">    missing_ok : bool = False</span>
+<span class="sd">        Don&#39;t throw an error if the app does not exist.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">apps</span> <span class="o">=</span> <span class="n">get_apps</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">apps</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">missing_ok</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;App &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; does not exist.&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ServiceManager"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.ServiceManager">[docs]</a><span class="k">class</span> <span class="nc">ServiceManager</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;A manager for handling services on Linux</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        prefix : str</span>
+<span class="sd">            The prefix for all services, limiting searches, etc.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="o">=</span> <span class="n">prefix</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Dictionary of existing services</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_uid</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getuid</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_paths</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;~/.config/systemd/user&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(),</span> <span class="s2">&quot;user&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/etc/systemd/user&quot;</span><span class="p">),</span> <span class="s2">&quot;all users&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/etc/systemd/system&quot;</span><span class="p">),</span> <span class="s2">&quot;system&quot;</span><span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="o">+</span> <span class="s2">&quot;.*&quot;</span>
+            <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">domain</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">paths</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">file_path</span> <span class="ow">in</span> <span class="n">path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">pattern</span><span class="p">):</span>
+                    <span class="n">service</span> <span class="o">=</span> <span class="n">file_path</span><span class="o">.</span><span class="n">stem</span>
+                    <span class="n">short_name</span> <span class="o">=</span> <span class="n">file_path</span><span class="o">.</span><span class="n">suffixes</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">][</span><span class="mi">1</span><span class="p">:]</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">[</span><span class="n">short_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">domain</span><span class="p">,</span> <span class="n">service</span><span class="p">,</span> <span class="n">file_path</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">paths</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_paths</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">uid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_uid</span>
+
+<div class="viewcode-block" id="ServiceManager.create"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.ServiceManager.create">[docs]</a>    <span class="k">def</span> <span class="nf">create</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">,</span>
+        <span class="n">exe_path</span><span class="p">,</span>
+        <span class="o">*</span><span class="n">args</span><span class="p">,</span>
+        <span class="n">user_agent</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">user_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">stderr_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">stdout_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">exist_ok</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Create a service on Linux.</span>
+
+<span class="sd">        Linux supports three types of services. This function uses `user_agent` and</span>
+<span class="sd">        `user_only` to control which is selected.</span>
+
+<span class="sd">            1. A user service for a single user, which runs while that user is</span>
+<span class="sd">               logged in. (True, True)</span>
+
+<span class="sd">            2. A service installed by the admin that is available for all users,</span>
+<span class="sd">               and runs when any user is logged in. (True, False)</span>
+
+<span class="sd">            3. A system-wide service that runs when the machine is booted. (False, not</span>
+<span class="sd">               used)</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        name : str</span>
+<span class="sd">            The name of the agent</span>
+<span class="sd">        exe_path : pathlib.Path or str</span>
+<span class="sd">            The path to the executable (required). Either a path-like object or string</span>
+<span class="sd">        args : []</span>
+<span class="sd">            List of arguments for the program.</span>
+<span class="sd">        user_agent : bool = True</span>
+<span class="sd">            Whether to create a per-user agent (True) or system-wide daemon (False)</span>
+<span class="sd">        user_only : bool = True</span>
+<span class="sd">            Whether to install for just the current user (True) or all users (False).</span>
+<span class="sd">            Only affects user agents, not daemons which are always system-wide.</span>
+<span class="sd">        stderr_path : pathlib.Path or str = None</span>
+<span class="sd">            The file to direct stderr. Defaults to &quot;~/SEAMM/logs/&lt;name&gt;.out&quot;</span>
+<span class="sd">        stdout_path : pathlib.Path or str = None</span>
+<span class="sd">            The file to direct stdout. Defaults to &quot;~/SEAMM/logs/&lt;name&gt;.out&quot;</span>
+<span class="sd">        exist_ok : bool = False</span>
+<span class="sd">            If True overwrite an existing file.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">identifier</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="n">name</span>
+
+        <span class="k">if</span> <span class="n">user_agent</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">user_only</span><span class="p">:</span>
+                <span class="n">systemd_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">paths</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">systemd_path</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="mo">0o755</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="n">service_path</span> <span class="o">=</span> <span class="n">systemd_path</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">identifier</span><span class="si">}</span><span class="s2">.service&quot;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">systemd_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">paths</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">service_path</span> <span class="o">=</span> <span class="n">systemd_path</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">identifier</span><span class="si">}</span><span class="s2">.service&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">systemd_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">paths</span><span class="p">[</span><span class="mi">2</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">service_path</span> <span class="o">=</span> <span class="n">systemd_path</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">identifier</span><span class="si">}</span><span class="s2">.service&quot;</span>
+
+        <span class="k">if</span> <span class="n">service_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">exist_ok</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">FileExistsError</span><span class="p">()</span>
+
+        <span class="n">description</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">)</span><span class="o">.</span><span class="n">title</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;Seamm&quot;</span><span class="p">,</span> <span class="s2">&quot;SEAMM&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Handle any arguments</span>
+        <span class="n">program_arguments</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">args</span><span class="p">]</span>
+        <span class="n">arguments</span> <span class="o">=</span> <span class="n">list_to_dict</span><span class="p">(</span><span class="n">program_arguments</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="s2">&quot;--root&quot;</span> <span class="ow">in</span> <span class="n">arguments</span><span class="p">:</span>
+            <span class="n">root_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">arguments</span><span class="p">[</span><span class="s2">&quot;--root&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">root_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;~/SEAMM&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span>
+
+        <span class="n">wd_path</span> <span class="o">=</span> <span class="n">root_path</span> <span class="o">/</span> <span class="s2">&quot;services&quot;</span>
+        <span class="n">wd_path</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="mo">0o755</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="c1"># Create the command with arguments</span>
+        <span class="n">cmd</span> <span class="o">=</span> <span class="n">exe_path</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">program_arguments</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">cmd</span> <span class="o">+=</span> <span class="s2">&quot; &quot;</span>
+            <span class="n">cmd</span> <span class="o">+=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">program_arguments</span><span class="p">)</span>
+
+        <span class="c1"># And the service file</span>
+        <span class="k">if</span> <span class="n">user_agent</span><span class="p">:</span>
+            <span class="n">service</span> <span class="o">=</span> <span class="n">Template</span><span class="p">(</span><span class="n">user_text</span><span class="p">)</span><span class="o">.</span><span class="n">substitute</span><span class="p">(</span>
+                <span class="n">description</span><span class="o">=</span><span class="n">description</span><span class="p">,</span>
+                <span class="n">wd</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">wd_path</span><span class="p">),</span>
+                <span class="n">exe</span><span class="o">=</span><span class="n">cmd</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># System-wide daemons need the username</span>
+            <span class="n">username</span> <span class="o">=</span> <span class="n">getpass</span><span class="o">.</span><span class="n">getuser</span><span class="p">()</span>
+            <span class="n">service</span> <span class="o">=</span> <span class="n">Template</span><span class="p">(</span><span class="n">user_text</span><span class="p">)</span><span class="o">.</span><span class="n">substitute</span><span class="p">(</span>
+                <span class="n">description</span><span class="o">=</span><span class="n">description</span><span class="p">,</span>
+                <span class="n">user</span><span class="o">=</span><span class="n">username</span><span class="p">,</span>
+                <span class="n">wd</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">wd_path</span><span class="p">),</span>
+                <span class="n">exe</span><span class="o">=</span><span class="n">cmd</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Reset the service data so it is re-read</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Write the file ... we may not have permission, so catch that.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">service_path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">service</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">PermissionError</span><span class="p">:</span>
+            <span class="n">downloads</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;~/Downloads&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span>
+            <span class="n">downloads</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">downloads</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.service&quot;</span>
+            <span class="n">path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">service</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">You do not have permission to write to </span><span class="si">{</span><span class="n">systemd_path</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;If you have administrator access, run the following commands:&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    sudo mv </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">service_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    sudo chown root:root </span><span class="si">{</span><span class="n">service_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;To move the temporary copy of the file to the correct locations.&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Caught error?&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">()</span>
+            <span class="k">raise</span></div>
+
+<div class="viewcode-block" id="ServiceManager.delete"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.ServiceManager.delete">[docs]</a>    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">service</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="n">services</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">list</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">service</span> <span class="ow">in</span> <span class="n">services</span><span class="p">:</span>
+            <span class="n">domain</span><span class="p">,</span> <span class="n">service_name</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">service</span><span class="p">]</span>
+            <span class="c1"># Check if it is running</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_running</span><span class="p">(</span><span class="n">service</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stop</span><span class="p">(</span><span class="n">service</span><span class="p">)</span>
+            <span class="c1"># Now remove the files</span>
+            <span class="n">path</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">missing_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="c1"># Fix up service data</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">service</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Check if the service file exists, and remove if it does.</span>
+            <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">paths</span><span class="p">:</span>
+                <span class="n">systemd_path</span> <span class="o">=</span> <span class="n">path</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">.service&quot;</span>
+                <span class="n">systemd_path</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">missing_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServiceManager.file_path"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.ServiceManager.file_path">[docs]</a>    <span class="k">def</span> <span class="nf">file_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">service</span><span class="p">):</span>
+        <span class="s2">&quot;Return the path to the unit file for the service.&quot;</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span>
+        <span class="k">if</span> <span class="n">service</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="n">service</span><span class="p">][</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+<div class="viewcode-block" id="ServiceManager.is_installed"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.ServiceManager.is_installed">[docs]</a>    <span class="k">def</span> <span class="nf">is_installed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">service</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">service</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">list</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="ServiceManager.is_running"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.ServiceManager.is_running">[docs]</a>    <span class="k">def</span> <span class="nf">is_running</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">service</span><span class="p">):</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">services</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">list</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">service</span> <span class="ow">in</span> <span class="n">services</span><span class="p">:</span>
+            <span class="n">domain</span><span class="p">,</span> <span class="n">service_target</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">service</span><span class="p">]</span>
+            <span class="k">if</span> <span class="s2">&quot;user&quot;</span> <span class="ow">in</span> <span class="n">domain</span><span class="p">:</span>
+                <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;systemctl --user is-active </span><span class="si">{</span><span class="n">service_target</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;systemctl is-active </span><span class="si">{</span><span class="n">service_target</span><span class="si">}</span><span class="s2">&quot;</span>
+
+            <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+<div class="viewcode-block" id="ServiceManager.list"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.ServiceManager.list">[docs]</a>    <span class="k">def</span> <span class="nf">list</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="ServiceManager.restart"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.ServiceManager.restart">[docs]</a>    <span class="k">def</span> <span class="nf">restart</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">service</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stop</span><span class="p">(</span><span class="n">service</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="n">ignore_errors</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="n">service</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="n">ignore_errors</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServiceManager.start"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.ServiceManager.start">[docs]</a>    <span class="k">def</span> <span class="nf">start</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">service</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_running</span><span class="p">(</span><span class="n">service</span><span class="p">):</span>
+            <span class="n">services</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">list</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">service</span> <span class="ow">in</span> <span class="n">services</span><span class="p">:</span>
+                <span class="n">domain</span><span class="p">,</span> <span class="n">service_target</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">service</span><span class="p">]</span>
+                <span class="k">if</span> <span class="s2">&quot;user&quot;</span> <span class="ow">in</span> <span class="n">domain</span><span class="p">:</span>
+                    <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;systemctl --user --now enable </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;systemctl --now enable </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span> <span class="o">!=</span> <span class="mi">0</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">ignore_errors</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Starting the service &#39;</span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">&#39; was not successful:</span><span class="se">\n</span><span class="s2">&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">stderr</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+            <span class="k">elif</span> <span class="ow">not</span> <span class="n">ignore_errors</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Service &#39;</span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">&#39; cannot be started because it is not installed&quot;</span>
+                <span class="p">)</span></div>
+
+<div class="viewcode-block" id="ServiceManager.status"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.ServiceManager.status">[docs]</a>    <span class="k">def</span> <span class="nf">status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">service</span><span class="p">):</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;service&quot;</span><span class="p">:</span> <span class="n">service</span><span class="p">}</span>
+        <span class="n">services</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">list</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">service</span> <span class="ow">in</span> <span class="n">services</span><span class="p">:</span>
+            <span class="n">status</span><span class="p">[</span><span class="s2">&quot;exists&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">status</span><span class="p">[</span><span class="s2">&quot;running&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_running</span><span class="p">(</span><span class="n">service</span><span class="p">)</span>
+
+            <span class="c1"># Get the root directory and, for the dashboard, port</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">service</span><span class="p">][</span><span class="mi">2</span><span class="p">]</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Checking </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> for the root and port&quot;</span><span class="p">)</span>
+            <span class="n">config</span> <span class="o">=</span> <span class="n">ConfigParser</span><span class="p">()</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+
+            <span class="n">root</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">port</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="s2">&quot;Service&quot;</span> <span class="ow">in</span> <span class="n">config</span><span class="o">.</span><span class="n">sections</span><span class="p">()</span> <span class="ow">and</span> <span class="s2">&quot;ExecStart&quot;</span> <span class="ow">in</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;Service&quot;</span><span class="p">]:</span>
+                <span class="n">keywords</span> <span class="o">=</span> <span class="n">list_to_dict</span><span class="p">(</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;Service&quot;</span><span class="p">][</span><span class="s2">&quot;ExecStart&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="mi">1</span><span class="p">:])</span>
+                <span class="n">root</span> <span class="o">=</span> <span class="n">keywords</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;--root&quot;</span><span class="p">)</span>
+                <span class="n">port</span> <span class="o">=</span> <span class="n">keywords</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;--port&quot;</span><span class="p">)</span>
+            <span class="n">status</span><span class="p">[</span><span class="s2">&quot;root&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">root</span>
+            <span class="n">status</span><span class="p">[</span><span class="s2">&quot;port&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">port</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">status</span><span class="p">[</span><span class="s2">&quot;exists&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="n">status</span></div>
+
+<div class="viewcode-block" id="ServiceManager.stop"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.linux.ServiceManager.stop">[docs]</a>    <span class="k">def</span> <span class="nf">stop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">service</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="n">services</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">list</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">service</span> <span class="ow">in</span> <span class="n">services</span><span class="p">:</span>
+            <span class="n">domain</span><span class="p">,</span> <span class="n">service_target</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">service</span><span class="p">]</span>
+            <span class="c1"># Check if it is running</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_running</span><span class="p">(</span><span class="n">service</span><span class="p">):</span>
+                <span class="k">if</span> <span class="s2">&quot;user&quot;</span> <span class="ow">in</span> <span class="n">domain</span><span class="p">:</span>
+                    <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;systemctl --user disable </span><span class="si">{</span><span class="n">service_target</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;systemctl disable </span><span class="si">{</span><span class="n">service_target</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">pass</span>
+                <span class="k">elif</span> <span class="ow">not</span> <span class="n">ignore_errors</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not stop the service &#39;</span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">&#39;:&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="s2">&quot;user&quot;</span> <span class="ow">in</span> <span class="n">domain</span><span class="p">:</span>
+                    <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;systemctl --user stop </span><span class="si">{</span><span class="n">service_target</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;systemctl stop </span><span class="si">{</span><span class="n">service_target</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">pass</span>
+                <span class="k">elif</span> <span class="ow">not</span> <span class="n">ignore_errors</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not stop the service &#39;</span><span class="si">{</span><span class="n">service</span><span class="si">}</span><span class="s2">&#39;:&quot;</span><span class="p">)</span></div></div>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">SEAMM Installer Step 2022.6.30+1.g8f9f278 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">seamm_installer.linux</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2022, Paul Saxe.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 5.0.2.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,336 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>seamm_installer.pip &#8212; SEAMM Installer Step 2022.6.30 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/classic.css" />
+    
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+    <script src="../../_static/jquery.js"></script>
+    <script src="../../_static/underscore.js"></script>
+    <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+    <script src="../../_static/doctools.js"></script>
+    
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">SEAMM Installer Step 2022.6.30 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">seamm_installer.pip</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for seamm_installer.pip</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">pkg_resources</span>
+<span class="kn">import</span> <span class="nn">pprint</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+
+<span class="kn">import</span> <span class="nn">requests</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="c1"># Regular expressions for pypi query results.</span>
+<span class="n">SNIPPET_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;&lt;a class=</span><span class="se">\&quot;</span><span class="s2">package-snippet</span><span class="se">\&quot;</span><span class="s2">.*&gt;&quot;</span><span class="p">)</span>
+<span class="n">NAME_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;&lt;span class=</span><span class="se">\&quot;</span><span class="s2">package-snippet__name</span><span class="se">\&quot;</span><span class="s2">&gt;(.+)&lt;/span&gt;&quot;</span><span class="p">)</span>
+<span class="n">VERSION_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;.*&lt;span class=</span><span class="se">\&quot;</span><span class="s2">package-snippet__version</span><span class="se">\&quot;</span><span class="s2">&gt;(.+)&lt;/span&gt;&quot;</span><span class="p">)</span>
+<span class="n">DESCRIPTION_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;.*&lt;p class=</span><span class="se">\&quot;</span><span class="s2">package-snippet__description</span><span class="se">\&quot;</span><span class="s2">&gt;(.+)&lt;/p&gt;&quot;</span><span class="p">)</span>
+<span class="n">NEXT_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+    <span class="sa">r</span><span class="s1">&#39;&lt;a href=&quot;/search/.*page=(.+)&quot; &#39;</span> <span class="s1">&#39;class=&quot;button button-group__button&quot;&gt;Next&lt;/a&gt;&#39;</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="Pip"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.pip.Pip">[docs]</a><span class="k">class</span> <span class="nc">Pip</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class for handling pip</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Creating Pip {str(type(self))}&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_base_url</span> <span class="o">=</span> <span class="s2">&quot;https://pypi.org/search/&quot;</span>
+
+<div class="viewcode-block" id="Pip.install"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.pip.Pip.install">[docs]</a>    <span class="k">def</span> <span class="nf">install</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">package</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Install the requested package.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        package : str</span>
+<span class="sd">            The package of interest.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;pip install </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+                <span class="n">command</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calling pip, returncode = </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span></div>
+
+<div class="viewcode-block" id="Pip.list"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.pip.Pip.list">[docs]</a>    <span class="k">def</span> <span class="nf">list</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outdated</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">uptodate</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;List the installed packages.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        outdated: bool</span>
+<span class="sd">            If true, list only the outdated packages. Cannot be used with</span>
+<span class="sd">            `uptodate`.</span>
+<span class="sd">        uptodate: bool</span>
+<span class="sd">            If true, list only the up-to-date packages. Cannot be used with</span>
+<span class="sd">            `outdated`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="s2">&quot;pip list&quot;</span>
+        <span class="k">if</span> <span class="n">outdated</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">uptodate</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;May only use one of &#39;outdated&#39; and &#39;uptodate&#39;.&quot;</span><span class="p">)</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="s2">&quot; --outdated&quot;</span>
+        <span class="k">elif</span> <span class="n">uptodate</span><span class="p">:</span>
+            <span class="n">command</span> <span class="o">+=</span> <span class="s2">&quot; --uptodate&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+                <span class="n">command</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calling pip, returncode = </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">output</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+            <span class="n">package</span><span class="p">,</span> <span class="n">version</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+            <span class="n">result</span><span class="p">[</span><span class="n">package</span><span class="p">]</span> <span class="o">=</span> <span class="n">pkg_resources</span><span class="o">.</span><span class="n">parse_version</span><span class="p">(</span><span class="n">version</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+<div class="viewcode-block" id="Pip.search"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.pip.Pip.search">[docs]</a>    <span class="k">def</span> <span class="nf">search</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">framework</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">progress</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Search PyPi for packages.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        query : str</span>
+<span class="sd">            The text of the query, if any.</span>
+<span class="sd">        framework : str</span>
+<span class="sd">            The framework classifier, if any.</span>
+<span class="sd">        exact : bool = False</span>
+<span class="sd">            Whether to only return the exact match, defaults to False.</span>
+<span class="sd">        progress : bool = False</span>
+<span class="sd">            Whether to show progress dots.</span>
+<span class="sd">        newline : bool = True</span>
+<span class="sd">            Whether to print a newline at the end if showing progress</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        [str]</span>
+<span class="sd">            A list of packages matching the query.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Can&#39;t have exact match if no query term</span>
+        <span class="k">if</span> <span class="n">query</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">exact</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="c1"># Set up the arguments for the http get</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;q&quot;</span><span class="p">:</span> <span class="n">query</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">framework</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">args</span><span class="p">[</span><span class="s2">&quot;c&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Framework::</span><span class="si">{</span><span class="n">framework</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;search query: </span><span class="si">{</span><span class="n">args</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># PyPi serves up the results one page at a time, so loop</span>
+        <span class="k">if</span> <span class="n">progress</span><span class="p">:</span>
+            <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_base_url</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">args</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;response: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">text</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="n">snippets</span> <span class="o">=</span> <span class="n">SNIPPET_RE</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+
+            <span class="k">for</span> <span class="n">snippet</span> <span class="ow">in</span> <span class="n">snippets</span><span class="p">:</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="n">NAME_RE</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">snippet</span><span class="p">)</span>
+                <span class="n">version</span> <span class="o">=</span> <span class="n">VERSION_RE</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">snippet</span><span class="p">)</span>
+                <span class="n">description</span> <span class="o">=</span> <span class="n">DESCRIPTION_RE</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">snippet</span><span class="p">)</span>
+
+                <span class="c1"># Ignore any snippets without data, e.g. the first one.</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">exact</span> <span class="ow">or</span> <span class="n">name</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">query</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">version</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                            <span class="n">version</span> <span class="o">=</span> <span class="kc">None</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">version</span> <span class="o">=</span> <span class="n">pkg_resources</span><span class="o">.</span><span class="n">parse_version</span><span class="p">(</span><span class="n">version</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">description</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                            <span class="n">description</span> <span class="o">=</span> <span class="s2">&quot;no description given&quot;</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">description</span> <span class="o">=</span> <span class="n">description</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                        <span class="n">result</span><span class="p">[</span><span class="n">name</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+                            <span class="s2">&quot;channel&quot;</span><span class="p">:</span> <span class="s2">&quot;pypi&quot;</span><span class="p">,</span>
+                            <span class="s2">&quot;version&quot;</span><span class="p">:</span> <span class="n">version</span><span class="p">,</span>
+                            <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="n">description</span><span class="p">,</span>
+                        <span class="p">}</span>
+
+                        <span class="k">if</span> <span class="n">exact</span><span class="p">:</span>
+                            <span class="k">break</span>
+
+            <span class="k">if</span> <span class="n">progress</span><span class="p">:</span>
+                <span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">if</span> <span class="n">count</span> <span class="o">&lt;=</span> <span class="mi">50</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">count</span> <span class="o">=</span> <span class="mi">1</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="c1"># See if there is a next page</span>
+            <span class="n">next_page</span> <span class="o">=</span> <span class="n">NEXT_RE</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">snippet</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">next_page</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">args</span><span class="p">[</span><span class="s2">&quot;page&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">next_page</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">progress</span> <span class="ow">and</span> <span class="n">newline</span> <span class="ow">and</span> <span class="n">count</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Package information:</span><span class="se">\n</span><span class="si">{</span><span class="n">pprint</span><span class="o">.</span><span class="n">pformat</span><span class="p">(</span><span class="n">result</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">result</span></div>
+
+<div class="viewcode-block" id="Pip.show"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.pip.Pip.show">[docs]</a>    <span class="k">def</span> <span class="nf">show</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">package</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return the information for an installed package.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        package : str</span>
+<span class="sd">            The package of interest.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;pip show </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+                <span class="n">command</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;Package(s) not found:&quot;</span> <span class="ow">in</span> <span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="p">:</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calling pip, returncode = </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">raise</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+            <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="n">maxsplit</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="s2">&quot;require&quot;</span> <span class="ow">in</span> <span class="n">key</span><span class="p">:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)]</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s2">&quot;version&quot;</span><span class="p">:</span>
+                <span class="n">data</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">pkg_resources</span><span class="o">.</span><span class="n">parse_version</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">data</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="se">\n</span><span class="si">{</span><span class="n">pprint</span><span class="o">.</span><span class="n">pformat</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">data</span></div>
+
+<div class="viewcode-block" id="Pip.uninstall"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.pip.Pip.uninstall">[docs]</a>    <span class="k">def</span> <span class="nf">uninstall</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">package</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Remove the requested package.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        package : str</span>
+<span class="sd">            The package of interest.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;pip uninstall --yes </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+                <span class="n">command</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calling pip, returncode = </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span></div>
+
+<div class="viewcode-block" id="Pip.update"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.pip.Pip.update">[docs]</a>    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">package</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Update the requested package.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        package : str</span>
+<span class="sd">            The package of interest.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;pip install --upgrade </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+                <span class="n">command</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">if</span> <span class="s2">&quot;FileNotFoundError&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Pip returned a warning: </span><span class="si">{</span><span class="n">line</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calling pip, returncode = </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">returncode</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Output: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">raise</span></div></div>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">SEAMM Installer Step 2022.6.30 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">seamm_installer.pip</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2022, Paul Saxe.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 5.0.2.
+    </div>
+  </body>
+</html>

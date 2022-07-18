@@ -1,0 +1,254 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>seamm_installer.install &#8212; SEAMM Installer Step 2022.6.30+1.g8f9f278 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/classic.css" />
+    
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+    <script src="../../_static/jquery.js"></script>
+    <script src="../../_static/underscore.js"></script>
+    <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+    <script src="../../_static/doctools.js"></script>
+    
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">SEAMM Installer Step 2022.6.30+1.g8f9f278 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">seamm_installer.install</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for seamm_installer.install</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+
+<span class="sd">&quot;&quot;&quot;Install requested components of SEAMM.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">platform</span>
+
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">datastore</span>
+<span class="kn">from</span> <span class="nn">.metadata</span> <span class="kn">import</span> <span class="n">development_packages</span><span class="p">,</span> <span class="n">development_packages_pip</span>
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">my</span>
+<span class="kn">from</span> <span class="nn">.util</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">find_packages</span><span class="p">,</span>
+    <span class="n">get_metadata</span><span class="p">,</span>
+    <span class="n">package_info</span><span class="p">,</span>
+    <span class="n">run_plugin_installer</span><span class="p">,</span>
+    <span class="n">set_metadata</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="n">system</span> <span class="o">=</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span>
+<span class="k">if</span> <span class="n">system</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;Darwin&quot;</span><span class="p">,):</span>
+    <span class="kn">from</span> <span class="nn">.mac</span> <span class="kn">import</span> <span class="n">ServiceManager</span>
+
+    <span class="n">mgr</span> <span class="o">=</span> <span class="n">ServiceManager</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;org.molssi.seamm&quot;</span><span class="p">)</span>
+<span class="k">elif</span> <span class="n">system</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;Linux&quot;</span><span class="p">,):</span>
+    <span class="kn">from</span> <span class="nn">.linux</span> <span class="kn">import</span> <span class="n">ServiceManager</span>
+
+    <span class="n">mgr</span> <span class="o">=</span> <span class="n">ServiceManager</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;org.molssi.seamm&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SEAMM does not support services on </span><span class="si">{</span><span class="n">system</span><span class="si">}</span><span class="s2"> yet.&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="setup"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.install.setup">[docs]</a><span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="n">parser</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Define the command-line interface for installing SEAMM components.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    parser : argparse.ArgumentParser</span>
+<span class="sd">        The main parser for the application.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Install</span>
+    <span class="n">subparser</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s2">&quot;install&quot;</span><span class="p">)</span>
+    <span class="n">subparser</span><span class="o">.</span><span class="n">set_defaults</span><span class="p">(</span><span class="n">func</span><span class="o">=</span><span class="n">install</span><span class="p">)</span>
+    <span class="n">subparser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;--all&quot;</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Install any missing packages from the MolSSI&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">subparser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;--third-party&quot;</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Install any missing packages from 3rd parties&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">my</span><span class="o">.</span><span class="n">development</span><span class="p">:</span>
+        <span class="n">subparser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+            <span class="s2">&quot;--development-environment&quot;</span><span class="p">,</span>
+            <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
+            <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Install the development environment.&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="n">subparser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;--update&quot;</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Update any out-of-date packages&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">subparser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;--gui-only&quot;</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Install only packages necessary for the GUI&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">subparser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;modules&quot;</span><span class="p">,</span>
+        <span class="n">nargs</span><span class="o">=</span><span class="s2">&quot;*&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Specific modules and plug-ins to install.&quot;</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="install"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.install.install">[docs]</a><span class="k">def</span> <span class="nf">install</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Install the requested SEAMM components and plug-ins.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    options : argparse.Namespace</span>
+<span class="sd">        The options from the command-line parser.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">my</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">gui_only</span><span class="p">:</span>
+        <span class="n">metadata</span> <span class="o">=</span> <span class="n">get_metadata</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;gui-only&quot;</span><span class="p">]:</span>
+            <span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;gui-only&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">set_metadata</span><span class="p">(</span><span class="n">metadata</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">my</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">all</span><span class="p">:</span>
+        <span class="n">install_packages</span><span class="p">(</span>
+            <span class="s2">&quot;all&quot;</span><span class="p">,</span> <span class="n">third_party</span><span class="o">=</span><span class="n">my</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">third_party</span><span class="p">,</span> <span class="n">update</span><span class="o">=</span><span class="n">my</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">update</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">install_packages</span><span class="p">(</span><span class="n">my</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">modules</span><span class="p">,</span> <span class="n">update</span><span class="o">=</span><span class="n">my</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">update</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">my</span><span class="o">.</span><span class="n">development</span> <span class="ow">and</span> <span class="n">my</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">development_environment</span><span class="p">:</span>
+        <span class="n">install_development_environment</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="install_packages"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.install.install_packages">[docs]</a><span class="k">def</span> <span class="nf">install_packages</span><span class="p">(</span><span class="n">to_install</span><span class="p">,</span> <span class="n">update</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">third_party</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Install SEAMM components and plug-ins.&quot;&quot;&quot;</span>
+    <span class="n">metadata</span> <span class="o">=</span> <span class="n">get_metadata</span><span class="p">()</span>
+
+    <span class="c1"># Find all the packages</span>
+    <span class="n">packages</span> <span class="o">=</span> <span class="n">find_packages</span><span class="p">(</span><span class="n">progress</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">to_install</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">third_party</span><span class="p">:</span>
+            <span class="n">to_install</span> <span class="o">=</span> <span class="p">[</span><span class="o">*</span><span class="n">packages</span><span class="o">.</span><span class="n">keys</span><span class="p">()]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">to_install</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">p</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">packages</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="s2">&quot;3rd-party&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">d</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span>
+            <span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">package</span> <span class="ow">in</span> <span class="n">to_install</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">package</span> <span class="o">==</span> <span class="s2">&quot;development&quot;</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">available</span> <span class="o">=</span> <span class="n">packages</span><span class="p">[</span><span class="n">package</span><span class="p">][</span><span class="s2">&quot;version&quot;</span><span class="p">]</span>
+        <span class="n">channel</span> <span class="o">=</span> <span class="n">packages</span><span class="p">[</span><span class="n">package</span><span class="p">][</span><span class="s2">&quot;channel&quot;</span><span class="p">]</span>
+        <span class="n">installed_version</span><span class="p">,</span> <span class="n">installed_channel</span> <span class="o">=</span> <span class="n">package_info</span><span class="p">(</span><span class="n">package</span><span class="p">)</span>
+        <span class="n">ptype</span> <span class="o">=</span> <span class="n">packages</span><span class="p">[</span><span class="n">package</span><span class="p">][</span><span class="s2">&quot;type&quot;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">installed_channel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Installing </span><span class="si">{</span><span class="n">ptype</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2"> version </span><span class="si">{</span><span class="n">available</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">channel</span> <span class="o">==</span> <span class="s2">&quot;pypi&quot;</span><span class="p">:</span>
+                <span class="n">my</span><span class="o">.</span><span class="n">pip</span><span class="o">.</span><span class="n">install</span><span class="p">(</span><span class="n">package</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">my</span><span class="o">.</span><span class="n">conda</span><span class="o">.</span><span class="n">install</span><span class="p">(</span><span class="n">package</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">package</span> <span class="o">==</span> <span class="s2">&quot;seamm-datastore&quot;</span><span class="p">:</span>
+                <span class="n">datastore</span><span class="o">.</span><span class="n">update</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">package</span> <span class="o">==</span> <span class="s2">&quot;seamm-dashboard&quot;</span><span class="p">:</span>
+                <span class="c1"># If installing, the service should not exist, but restrt if it does.</span>
+                <span class="n">service</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;dev_</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">my</span><span class="o">.</span><span class="n">development</span> <span class="k">else</span> <span class="n">package</span>
+                <span class="n">mgr</span><span class="o">.</span><span class="n">restart</span><span class="p">(</span><span class="n">service</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">package</span> <span class="o">==</span> <span class="s2">&quot;seamm-jobserver&quot;</span><span class="p">:</span>
+                <span class="n">service</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;dev_</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">my</span><span class="o">.</span><span class="n">development</span> <span class="k">else</span> <span class="n">package</span>
+                <span class="n">mgr</span><span class="o">.</span><span class="n">restart</span><span class="p">(</span><span class="n">service</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">update</span> <span class="ow">and</span> <span class="n">installed_version</span> <span class="o">&lt;</span> <span class="n">available</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Updating </span><span class="si">{</span><span class="n">ptype</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2"> from version </span><span class="si">{</span><span class="n">installed_version</span><span class="si">}</span><span class="s2"> &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;to </span><span class="si">{</span><span class="n">available</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">channel</span> <span class="o">==</span> <span class="n">installed_channel</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">channel</span> <span class="o">==</span> <span class="s2">&quot;pypi&quot;</span><span class="p">:</span>
+                    <span class="n">my</span><span class="o">.</span><span class="n">pip</span><span class="o">.</span><span class="n">install</span><span class="p">(</span><span class="n">package</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">my</span><span class="o">.</span><span class="n">conda</span><span class="o">.</span><span class="n">install</span><span class="p">(</span><span class="n">package</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">installed_channel</span> <span class="o">==</span> <span class="s2">&quot;pypi&quot;</span><span class="p">:</span>
+                    <span class="n">my</span><span class="o">.</span><span class="n">pip</span><span class="o">.</span><span class="n">uninstall</span><span class="p">(</span><span class="n">package</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">my</span><span class="o">.</span><span class="n">conda</span><span class="o">.</span><span class="n">uninstall</span><span class="p">(</span><span class="n">package</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">channel</span> <span class="o">==</span> <span class="s2">&quot;pypi&quot;</span><span class="p">:</span>
+                    <span class="n">my</span><span class="o">.</span><span class="n">pip</span><span class="o">.</span><span class="n">install</span><span class="p">(</span><span class="n">package</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">my</span><span class="o">.</span><span class="n">conda</span><span class="o">.</span><span class="n">install</span><span class="p">(</span><span class="n">package</span><span class="p">)</span>
+        <span class="c1"># See if the package has an installer</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;gui-only&quot;</span><span class="p">]:</span>
+            <span class="n">run_plugin_installer</span><span class="p">(</span><span class="n">package</span><span class="p">,</span> <span class="s2">&quot;install&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="install_development_environment"><a class="viewcode-back" href="../../developer/seamm_installer.html#seamm_installer.install.install_development_environment">[docs]</a><span class="k">def</span> <span class="nf">install_development_environment</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Install packages needed for development.&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">package</span> <span class="ow">in</span> <span class="n">development_packages</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Installing development package </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">my</span><span class="o">.</span><span class="n">conda</span><span class="o">.</span><span class="n">install</span><span class="p">(</span><span class="n">package</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">package</span> <span class="ow">in</span> <span class="n">development_packages_pip</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Installing development package </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">my</span><span class="o">.</span><span class="n">pip</span><span class="o">.</span><span class="n">install</span><span class="p">(</span><span class="n">package</span><span class="p">)</span></div>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">SEAMM Installer Step 2022.6.30+1.g8f9f278 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">seamm_installer.install</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2022, Paul Saxe.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 5.0.2.
+    </div>
+  </body>
+</html>
